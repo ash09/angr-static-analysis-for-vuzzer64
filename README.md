@@ -2,7 +2,7 @@
 
 About
 -----
-This repository contains a Angr-based static analysis module developed during my internship at VU Amsterdam for a their fuzzing tool Vuzzer. It supports both the 32bit and 64bit versions of Vuzzer.
+This repository contains a Angr-based static analysis module developed during my internship at VU Amsterdam for their fuzzing tool Vuzzer. It supports both the 32bit and 64bit versions of Vuzzer.
 
 Vuzzer 32bit: https://github.com/vusec/vuzzer
 Vuzzer 64bit: https://github.com/vusec/vuzzer64
