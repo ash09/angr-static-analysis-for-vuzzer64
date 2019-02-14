@@ -41,7 +41,7 @@ def calculate_weight_edges(cfg):
 				weight = 1.0
 		# assign weight to each outgoing edge
 		for s in successors:
-			cfg.graph.edge[node][s]['weight'] = weight
+			cfg.graph[node][s]['weight'] = weight
 
 def calculate_weight_blocks(cfg):
 	global fweight
@@ -52,26 +52,26 @@ def calculate_weight_blocks(cfg):
 		stuck += 1
 		if stuck >= 2*total_nodes:
 			algo_stuck(cfg)
-		for current_node in cfg.graph.nodes_iter():
-			if hasattr(current_node,'weight'): continue
+		for current_node in cfg.graph.nodes():
+			if 'weight' in cfg.graph.nodes[current_node]: continue
 			predecessors = cfg.get_predecessors(current_node,excluding_fakeret=True)
 			if len(predecessors) == 0: # if node has no predecessor, then it's a function call or an orphan
 				if fweight.has_key(current_node.addr):
-					current_node.weight = fweight[current_node.addr][0] 
+					cfg.graph.nodes[current_node]['weight'] = fweight[current_node.addr][0]
 				else:
-					current_node.weight = 1.0
+					cfg.graph.nodes[current_node]['weight'] = 1.0
 				nodes_done += 1
 				stuck = 0 # we made some progress, not stuck
 				continue
 			a = True
 			for pnode in predecessors:
-				a = a and hasattr(pnode,'weight')
+				a = a and ('weight' in cfg.graph.nodes[pnode])
 			if a:
-				current_node.weight = 0.0
+				cfg.graph.nodes[current_node]['weight'] = 0.0
 				nodes_done += 1
 				stuck = 0 # we made some progress, not stuck
 				for pnode in predecessors:
-					current_node.weight += cfg.graph.edge[pnode][current_node]["weight"] * pnode.weight
+					cfg.graph.nodes[current_node]['weight'] += cfg.graph[pnode][current_node]["weight"] * cfg.graph.nodes[pnode]['weight']
 
 def algo_stuck(cfg):
 	print "   The algorithm is stuck. There is probably at least one loop in the CFG."
@@ -89,8 +89,9 @@ def remove_cycles(cfg):
 	# we remove loops with only one node
 	for n1,n2 in cfg.graph.edges():
 		if n1 == n2:
-			cfg.graph.remove_edge(n1,n2)
 			removed_edges.append((n1,n2))
+	for n1,n2 in removed_edges:
+		cfg.graph.remove_edge(n1,n2)
 	# it removes complex cycles with more than 2 nodes
 	while True:
 		try:
@@ -174,14 +175,14 @@ def printCFG(cfg):
 	print "===== CFG of %s =====" % cfg.name
 	print "== Nodes =="
 	for n in cfg.graph.nodes():
-		if hasattr(n,"weight"):
-			print "%s (0x%x)  weight=%.02f" % (n.name,n.addr,n.weight)
+		if 'weight' in cfg.graph.nodes[n]:
+			print "%s (0x%x)  weight=%.02f" % (n.name,n.addr,cfg.graph.nodes[n]['weight'])
 		else:
 			print "%s (0x%x)" % (n.name,n.addr)
 	print "== Edges =="
 	for n1,n2 in cfg.graph.edges():
-		if "weight" in cfg.graph.edge[n1][n2]:
-			print "0x%x (%s) --%.2f-->  0x%x (%s)" % (n1.addr,n1.name,cfg.graph.edge[n1][n2]["weight"],n2.addr,n2.name)
+		if "weight" in cfg.graph[n1][n2]:
+			print "0x%x (%s) --%.2f-->  0x%x (%s)" % (n1.addr,n1.name,cfg.graph[n1][n2]["weight"],n2.addr,n2.name)
 		else:
 			print "0x%x (%s) -->  0x%x (%s)" % (n1.addr,n1.name,n2.addr,n2.name)
 	print("")
@@ -208,11 +209,14 @@ def find_CMP_operands(proj,cfg,binName):
 	global cmp_imm_operands
 	for node in cfg.graph.nodes():
 		for inst in node.instruction_addrs:
-			insn = proj.factory.block(inst,num_inst=1).capstone.insns[0].insn
-			if insn.mnemonic == "cmp":
-				for op in insn.operands:
-					if op.type == X86_OP_IMM:
-						cmp_imm_operands.add("0x%X" % op.value.imm)
+			try:
+				insn = proj.factory.block(inst,num_inst=1).capstone.insns[0].insn
+				if insn.mnemonic == "cmp":
+					for op in insn.operands:
+						if op.type == X86_OP_IMM:
+							cmp_imm_operands.add("0x%X" % op.value.imm)
+			except IndexError:
+				print '========= IndexError ========='
 
 if __name__ == "__main__":
 	binaryPath = sys.argv[1]
@@ -276,12 +280,12 @@ if __name__ == "__main__":
 			for node in cfg_f.graph.nodes():
 				if fweight.has_key(node.addr):
 					w,e = fweight[node.addr]
-					fweight[node.addr] = (min(w,node.weight),e)
+					fweight[node.addr] = (min(w,cfg_f.graph.nodes[node]['weight']),e)
 				else:
 					if node.size is not None:	# WORKAROUND: sometimes, the size is None for some reason :-(
-						fweight[node.addr] = (node.weight,node.addr+node.size)
+						fweight[node.addr] = (cfg_f.graph.nodes[node]['weight'],node.addr+node.size)
 					else:
-						fweight[node.addr] = (node.weight,-1)
+						fweight[node.addr] = (cfg_f.graph.nodes[node]['weight'],-1)
 
 			del cfg_f
 			break
