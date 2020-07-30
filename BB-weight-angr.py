@@ -94,8 +94,11 @@ def remove_cycles(cfg):
 	# we remove loops with only one node
 	for n1,n2 in cfg.graph.edges():
 		if n1 == n2:
-			cfg.graph.remove_edge(n1,n2)
 			removed_edges.append((n1,n2))
+	for n1,n2 in removed_edges:
+			cfg.graph.remove_edge(n1,n2)
+
+	removed_edges = []
 	# it removes complex cycles with more than 2 nodes
 	while True:
 		try:
@@ -213,7 +216,10 @@ def find_CMP_operands(proj,cfg,binName):
 	global cmp_imm_operands
 	for node in cfg.graph.nodes():
 		for inst in node.instruction_addrs:
-			insn = proj.factory.block(inst,num_inst=1).capstone.insns[0].insn
+			insns = proj.factory.block(inst,num_inst=1).capstone.insns
+			if len(insns) == 0:
+				continue		
+			insn = insns[0].insn
 			if insn.mnemonic == "cmp":
 				for op in insn.operands:
 					if op.type == X86_OP_IMM:
