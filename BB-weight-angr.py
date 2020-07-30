@@ -25,7 +25,6 @@ import sys
 from capstone import *
 from capstone.x86_const import X86_INS_CMP, X86_OP_IMM
 import networkx as nx
-from angrutils import plot_cfg
 
 
 cmp_imm_operands = set()
@@ -33,7 +32,7 @@ fweight = dict()
 
 def calculate_weight_edges(cfg):
 	for node in cfg.graph.nodes():
-		successors = cfg.get_successors(node,excluding_fakeret=True)
+		successors = cfg.model.get_successors(node,excluding_fakeret=True)
 		if len(successors) == 0: continue
 		weight = 1.0 / len(successors)
 		for s in successors:	# an undirect jump/call represented by PathTerminator can have up to 250 successors
@@ -41,7 +40,7 @@ def calculate_weight_edges(cfg):
 				weight = 1.0
 		# assign weight to each outgoing edge
 		for s in successors:
-			cfg.graph.edge[node][s]['weight'] = weight
+			cfg.graph.edges[node, s]['weight'] = weight
 
 def calculate_weight_blocks(cfg):
 	global fweight
@@ -52,36 +51,42 @@ def calculate_weight_blocks(cfg):
 		stuck += 1
 		if stuck >= 2*total_nodes:
 			algo_stuck(cfg)
-		for current_node in cfg.graph.nodes_iter():
-			if hasattr(current_node,'weight'): continue
-			predecessors = cfg.get_predecessors(current_node,excluding_fakeret=True)
+		for current_node in cfg.graph.nodes():
+			g_cur_node = cfg.graph.nodes[current_node]
+			if "weight" in g_cur_node: continue
+			predecessors = cfg.model.get_predecessors(current_node,excluding_fakeret=True)
 			if len(predecessors) == 0: # if node has no predecessor, then it's a function call or an orphan
-				if fweight.has_key(current_node.addr):
-					current_node.weight = fweight[current_node.addr][0] 
+				if current_node.addr in fweight:
+					g_cur_node["weight"] = fweight[current_node.addr][0] 
 				else:
-					current_node.weight = 1.0
+					g_cur_node["weight"] = 1.0
 				nodes_done += 1
 				stuck = 0 # we made some progress, not stuck
 				continue
 			a = True
 			for pnode in predecessors:
-				a = a and hasattr(pnode,'weight')
+				g_pnode = cfg.graph.nodes[pnode]
+				a = a and 'weight' in g_pnode
 			if a:
-				current_node.weight = 0.0
+				g_cur_node["weight"] = 0.0
 				nodes_done += 1
 				stuck = 0 # we made some progress, not stuck
 				for pnode in predecessors:
-					current_node.weight += cfg.graph.edge[pnode][current_node]["weight"] * pnode.weight
+					edge_weight = cfg.graph.edges[pnode, current_node]["weight"]
+					pnode_weight = cfg.graph.nodes[pnode]["weight"]
+					g_cur_node["weight"] += edge_weight * pnode_weight
+
 
 def algo_stuck(cfg):
-	print "   The algorithm is stuck. There is probably at least one loop in the CFG."
-	print "   A graphical view of the CFG will be generated in %s_cfg.png" % cfg.name
+	print("   The algorithm is stuck. There is probably at least one loop in the CFG.")
+	print("   A graphical view of the CFG will be generated in %s_cfg.png" % cfg.name)
 	try:
+		from angrutils import plot_cfg
 		plot_cfg(cfg,"%s_cfg" % cfg.name,asminst=True, vexinst=False, debug_info=False, remove_imports=True, remove_path_terminator=False)
 		print("   PNG generated sucessfully")
 	except:
 		print("   PNG generation failed. It is printed below:")
-	printCFG(cfg)
+		printCFG(cfg)
 	sys.exit(1)
 
 def remove_cycles(cfg):
@@ -97,7 +102,7 @@ def remove_cycles(cfg):
 			cycle = nx.find_cycle(cfg_f.graph)
 			for i in range(1,len(cycle)+1):
 				n1,n2 = cycle[-i]
-				if len(cfg.get_predecessors(n2,excluding_fakeret=True)) > 1:
+				if len(cfg.model.get_predecessors(n2,excluding_fakeret=True)) > 1:
 					removed_edges.append((n1,n2))
 					cfg.graph.remove_edge(n1,n2)
 					break
@@ -132,9 +137,9 @@ def remove_cycles(cfg):
 			pass
 	# print info
 	if len(removed_edges) == 0:
-		print "   ==> No cycles found"
+		print("   ==> No cycles found")
 	else:
-		print "   ==> %d cycles found" % len(removed_edges)
+		print("   ==> %d cycles found" % len(removed_edges))
 		#for n1,n2 in removed_edges:
 		#	print "    0x%x (%s) --> 0x%x (%s)" % (n1.addr,n1.name,n2.addr,n2.name)
 
@@ -171,19 +176,19 @@ def remove_pathterminator(cfg):
 			cfg.graph.remove_edge(n1,n2)
 
 def printCFG(cfg):
-	print "===== CFG of %s =====" % cfg.name
-	print "== Nodes =="
+	print("===== CFG of %s =====" % cfg.name)
+	print("== Nodes ==")
 	for n in cfg.graph.nodes():
 		if hasattr(n,"weight"):
-			print "%s (0x%x)  weight=%.02f" % (n.name,n.addr,n.weight)
+			print("%s (0x%x)  weight=%.02f" % (n.name,n.addr,n.weight))
 		else:
-			print "%s (0x%x)" % (n.name,n.addr)
-	print "== Edges =="
+			print("%s (0x%x)" % (n.name,n.addr))
+	print("== Edges ==")
 	for n1,n2 in cfg.graph.edges():
-		if "weight" in cfg.graph.edge[n1][n2]:
-			print "0x%x (%s) --%.2f-->  0x%x (%s)" % (n1.addr,n1.name,cfg.graph.edge[n1][n2]["weight"],n2.addr,n2.name)
+		if "weight" in cfg.graph[n1][n2]:
+			print("0x%x (%s) --%.2f-->  0x%x (%s)" % (n1.addr,n1.name,cfg.graph[n1][n2]["weight"],n2.addr,n2.name))
 		else:
-			print "0x%x (%s) -->  0x%x (%s)" % (n1.addr,n1.name,n2.addr,n2.name)
+			print("0x%x (%s) -->  0x%x (%s)" % (n1.addr,n1.name,n2.addr,n2.name))
 	print("")
 		
 def dump_analysis(filename):
@@ -191,7 +196,7 @@ def dump_analysis(filename):
 	for addr in fweight:
 		a,b = fweight[addr]
 		fweight[addr] = (1.0/a,b)
-	with open("%s.pkl"%filename,"w") as f:
+	with open("%s.pkl"%filename,"wb") as f:
 		pickle.dump(fweight,f)
 	# dump cmp operands analysis
 	cmp_imm_operands_hex = []
@@ -201,7 +206,7 @@ def dump_analysis(filename):
 		if len(op) == 3:
 			cmp_imm_operands.remove(op)
 	cmp_imm_operands_hex = set().union(cmp_imm_operands_hex)
-	with open("%s.names" % filename,'w') as f:
+	with open("%s.names" % filename,'wb') as f:
 		pickle.dump((cmp_imm_operands,cmp_imm_operands_hex),f)
 
 def find_CMP_operands(proj,cfg,binName):
@@ -217,20 +222,20 @@ def find_CMP_operands(proj,cfg,binName):
 if __name__ == "__main__":
 	binaryPath = sys.argv[1]
 	binName = ntpath.basename(binaryPath)
-	print "[+] Opening binary %s" % binaryPath
-	proj = angr.Project(binaryPath,load_options={'auto_load_libs': False,'main_opts': {'custom_base_addr': 0x0}})
+	print("[+] Opening binary %s" % binaryPath)
+	proj = angr.Project(binaryPath,load_options={'auto_load_libs': False,'main_opts': {'base_addr': 0x0}})
 	
-	print "[+] Searching for all the functions (using CFGFast)"
+	print("[+] Searching for all the functions (using CFGFast)")
 	full_cfg = proj.analyses.CFGFast(show_progressbar=True)
 	
 	# we want to only keep functions defined in the main binary
 	functions = []
-	for addr,func in full_cfg.functions.iteritems():
-		if proj.loader.main_bin.contains_addr(addr) and addr not in proj.loader.main_bin.reverse_plt:
+	for addr,func in full_cfg.functions.items():
+		if proj.loader.main_object.contains_addr(addr) and addr not in proj.loader.main_object.reverse_plt:
 			functions.append((addr,func))
 
 	nb_functions = len(functions)
-	print "   ==> %d functions to process." % nb_functions
+	print("   ==> %d functions to process." % nb_functions)
 
 	callgraph = full_cfg.functions.callgraph
 	remove_cycles_callgraph(callgraph)
@@ -247,47 +252,45 @@ if __name__ == "__main__":
 						continue
 			stuck = 0
 
-			print "[+] (%d/%d) Computing Accurate CFG for function %s (0x%x)" % (i,nb_functions,func.name,addr)
+			print("[+] (%d/%d) Computing Emulated CFG for function %s (0x%x)" % (i,nb_functions,func.name,addr))
 			functions.remove((addr,func))
 			i+=1
-			cfg_f = proj.analyses.CFGAccurate(
+			cfg_f = proj.analyses.CFGEmulated(
 				#max_iterations=5,
 				starts=[addr], 
-				context_sensitivity_level=1, 
 				call_depth=0, 
-				normalize=True,
-				enable_symbolic_back_traversal=True,
-				#enable_advanced_backward_slicing=True
+				normalize=True
 			)
-			cfg_f.remove_cycles()	# works if max_iteration has a high value but then CFGAccurate becomes very slow
+			cfg_f.remove_cycles()	# works if max_iteration has a high value but then CFGEmulated becomes very slow
 			cfg_f.name = func.name
 			
-			print "   [+] Removing cycles"
+			print("   [+] Removing cycles")
 			remove_cycles(cfg_f)	# remove the loop-back edges
 
-			print "   [+] Searching for CMP operands"
+			print("   [+] Searching for CMP operands")
 			find_CMP_operands(proj,cfg_f,binName)
 			
-			print "   [+] Computing edges/vertices weight"
+			print("   [+] Computing edges/vertices weight")
 			calculate_weight_edges(cfg_f)
 			calculate_weight_blocks(cfg_f)
 			
 			# store data in export in fweight
 			for node in cfg_f.graph.nodes():
-				if fweight.has_key(node.addr):
+				node_weight = cfg_f.graph.nodes[node]["weight"]
+				if node.addr in fweight:
 					w,e = fweight[node.addr]
-					fweight[node.addr] = (min(w,node.weight),e)
+					fweight[node.addr] = (min(w,node_weight),e)
 				else:
 					if node.size is not None:	# WORKAROUND: sometimes, the size is None for some reason :-(
-						fweight[node.addr] = (node.weight,node.addr+node.size)
+						fweight[node.addr] = (node_weight,node.addr+node.size)
 					else:
-						fweight[node.addr] = (node.weight,-1)
+						fweight[node.addr] = (node_weight,-1)
 
 			del cfg_f
 			break
 	
-	print "[+] Dumping analysis to pickle files"
+	print("[+] Dumping analysis to pickle files")
 	dump_analysis(binName)
 	
-	print "[+] Done."
+	print("[+] Done.")
 

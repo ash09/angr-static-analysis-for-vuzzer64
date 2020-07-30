@@ -12,8 +12,8 @@ How to use BB-weight-angr?
 --------------------------
 First of all, install the following dependencies on the system. 
 
-``` sudo pip2 install angr angrutils networkx ```
+```$ pip install angr```
 
 Then, in order to execute it, run the following command:
 
-``` python2 BB-weight-angr.py path/to/binary ```
+``` python BB-weight-angr.py path/to/binary ```
