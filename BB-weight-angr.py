@@ -200,7 +200,7 @@ def dump_analysis(filename):
 		a,b = fweight[addr]
 		fweight[addr] = (1.0/a,b)
 	with open("%s.pkl"%filename,"wb") as f:
-		pickle.dump(fweight,f)
+		pickle.dump(fweight,f,protocol=2)
 	# dump cmp operands analysis
 	cmp_imm_operands_hex = []
 	cmp_imm_operands2 = list(cmp_imm_operands)
@@ -210,7 +210,7 @@ def dump_analysis(filename):
 			cmp_imm_operands.remove(op)
 	cmp_imm_operands_hex = set().union(cmp_imm_operands_hex)
 	with open("%s.names" % filename,'wb') as f:
-		pickle.dump((cmp_imm_operands,cmp_imm_operands_hex),f)
+		pickle.dump((cmp_imm_operands,cmp_imm_operands_hex),f,protocol=2)
 
 def find_CMP_operands(proj,cfg,binName):
 	global cmp_imm_operands
